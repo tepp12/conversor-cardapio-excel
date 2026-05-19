@@ -6,7 +6,7 @@ from flask import Flask, request, jsonify, send_file, render_template
 from werkzeug.utils import secure_filename
 import google.generativeai as genai
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
 app = Flask(__name__)
@@ -60,13 +60,16 @@ def allowed_file(filename):
 def get_extension(filename):
     return filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
 
-def extract_text_from_pdf(filepath):
+def pdf_to_images(filepath):
+    """Render each PDF page to a PNG and return list of (bytes, mime_type)."""
     doc = fitz.open(filepath)
-    text = ""
+    pages = []
     for page in doc:
-        text += page.get_text()
+        mat = fitz.Matrix(2, 2)  # 2x zoom for better quality
+        pix = page.get_pixmap(matrix=mat)
+        pages.append((pix.tobytes("png"), "image/png"))
     doc.close()
-    return text
+    return pages
 
 def _parse_gemini_response(raw):
     raw = raw.strip()
@@ -76,6 +79,18 @@ def _parse_gemini_response(raw):
             raw = raw[4:]
     return json.loads(raw.strip())
 
+def call_gemini_images(image_list, user_prompt=""):
+    """Send one or more images to Gemini vision."""
+    model = genai.GenerativeModel('gemini-2.5-flash')
+    prompt = SYSTEM_INSTRUCTIONS
+    if user_prompt:
+        prompt += f"\n\nAdditional instructions: {user_prompt}"
+    parts = [prompt]
+    for image_bytes, mime_type in image_list:
+        parts.append({"mime_type": mime_type, "data": image_bytes})
+    response = model.generate_content(parts)
+    return _parse_gemini_response(response.text)
+
 def call_gemini_text(content_text, user_prompt=""):
     model = genai.GenerativeModel('gemini-2.5-flash')
     prompt = f"{SYSTEM_INSTRUCTIONS}\n\nContent to extract:\n{content_text}"
@@ -84,34 +99,13 @@ def call_gemini_text(content_text, user_prompt=""):
     response = model.generate_content(prompt)
     return _parse_gemini_response(response.text)
 
-def call_gemini_image(image_bytes, mime_type, user_prompt=""):
-    model = genai.GenerativeModel('gemini-2.5-flash')
-    prompt = SYSTEM_INSTRUCTIONS
-    if user_prompt:
-        prompt += f"\n\nAdditional instructions: {user_prompt}"
-    image_part = {"mime_type": mime_type, "data": image_bytes}
-    response = model.generate_content([prompt, image_part])
-    return _parse_gemini_response(response.text)
-
 def build_excel(data: dict, output_path: str):
     wb = Workbook()
     wb.remove(wb.active)
 
-    HEADER_BG = "1A1A2E"
-    HEADER_FG = "E8F4FD"
-    ALT_ROW_BG = "F0F4FF"
-    BORDER_COLOR = "C8D8F0"
-
-    header_font = Font(name="Calibri", bold=True, color=HEADER_FG, size=11)
-    data_font = Font(name="Calibri", size=10, color="1A1A2E")
-    title_font = Font(name="Calibri", bold=True, size=13, color=HEADER_BG)
-
-    thin_border = Border(
-        left=Side(style='thin', color=BORDER_COLOR),
-        right=Side(style='thin', color=BORDER_COLOR),
-        top=Side(style='thin', color=BORDER_COLOR),
-        bottom=Side(style='thin', color=BORDER_COLOR),
-    )
+    header_font = Font(name="Calibri", bold=True, size=11)
+    data_font = Font(name="Calibri", size=11)
+    header_fill = PatternFill("solid", fgColor="BFBFBF")
 
     sheets_data = data.get("sheets", [])
     if not sheets_data:
@@ -122,39 +116,27 @@ def build_excel(data: dict, output_path: str):
         headers = sheet_info.get("headers", [])
         rows = sheet_info.get("rows", [])
 
-        ws.row_dimensions[1].height = 30
-        title_cell = ws.cell(row=1, column=1, value=data.get("title", sheet_info["name"]))
-        title_cell.font = title_font
-        title_cell.alignment = Alignment(horizontal="left", vertical="center")
-        if headers:
-            ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
-
-        ws.row_dimensions[2].height = 22
+        # Header row
         for col_idx, header in enumerate(headers, start=1):
-            cell = ws.cell(row=2, column=col_idx, value=header)
+            cell = ws.cell(row=1, column=col_idx, value=header)
             cell.font = header_font
-            cell.fill = PatternFill("solid", fgColor=HEADER_BG)
+            cell.fill = header_fill
             cell.alignment = Alignment(horizontal="center", vertical="center")
-            cell.border = thin_border
 
-        for row_idx, row_data in enumerate(rows, start=3):
-            ws.row_dimensions[row_idx].height = 18
-            is_alt = (row_idx % 2 == 0)
+        # Data rows
+        for row_idx, row_data in enumerate(rows, start=2):
             for col_idx, value in enumerate(row_data, start=1):
                 cell = ws.cell(row=row_idx, column=col_idx, value=value)
                 cell.font = data_font
-                cell.border = thin_border
-                cell.alignment = Alignment(vertical="center", wrap_text=True)
-                if is_alt:
-                    cell.fill = PatternFill("solid", fgColor=ALT_ROW_BG)
 
+        # Auto-fit columns
         for col_idx, header in enumerate(headers, start=1):
             col_letter = get_column_letter(col_idx)
             max_len = len(str(header))
             for row_data in rows:
                 if col_idx - 1 < len(row_data):
                     max_len = max(max_len, len(str(row_data[col_idx - 1])))
-            ws.column_dimensions[col_letter].width = min(max_len + 4, 40)
+            ws.column_dimensions[col_letter].width = min(max_len + 2, 50)
 
     wb.save(output_path)
 
@@ -183,25 +165,26 @@ def convert():
 
         if has_file:
             ext = get_extension(uploaded_file.filename)
-            # Use a named temp file so it works on Render and any OS
-            suffix = f".{ext}"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as tmp:
                 uploaded_file.save(tmp.name)
                 tmp_path = tmp.name
 
             try:
                 if ext == 'pdf':
-                    pdf_text = extract_text_from_pdf(tmp_path)
-                    combined = pdf_text
+                    # Render PDF pages as images and send to Gemini vision
+                    pages = pdf_to_images(tmp_path)
+                    extra_prompt = user_prompt
                     if text_input:
-                        combined += f"\n\n--- Additional Text ---\n\n{text_input}"
-                    data = call_gemini_text(combined, user_prompt)
+                        extra_prompt += f"\n\nAdditional text context:\n{text_input}"
+                    data = call_gemini_images(pages, extra_prompt)
                 else:
                     with open(tmp_path, 'rb') as f:
                         image_bytes = f.read()
                     mime_type = IMAGE_MIME_TYPES[ext]
-                    extra = f"\n\nAdditional text context:\n{text_input}" if text_input else ""
-                    data = call_gemini_image(image_bytes, mime_type, user_prompt + extra)
+                    extra_prompt = user_prompt
+                    if text_input:
+                        extra_prompt += f"\n\nAdditional text context:\n{text_input}"
+                    data = call_gemini_images([(image_bytes, mime_type)], extra_prompt)
             finally:
                 os.unlink(tmp_path)
 
