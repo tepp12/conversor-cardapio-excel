@@ -11,8 +11,6 @@ from openpyxl.utils import get_column_letter
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32MB
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['OUTPUT_FOLDER'] = 'outputs'
 
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 if not GEMINI_API_KEY:
@@ -21,7 +19,6 @@ if not GEMINI_API_KEY:
 genai.configure(api_key=GEMINI_API_KEY)
 
 ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif'}
-IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp', 'gif'}
 IMAGE_MIME_TYPES = {
     'png': 'image/png',
     'jpg': 'image/jpeg',
@@ -80,7 +77,7 @@ def _parse_gemini_response(raw):
     return json.loads(raw.strip())
 
 def call_gemini_text(content_text, user_prompt=""):
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-.5-flash')
     prompt = f"{SYSTEM_INSTRUCTIONS}\n\nContent to extract:\n{content_text}"
     if user_prompt:
         prompt += f"\n\nAdditional instructions: {user_prompt}"
@@ -88,7 +85,7 @@ def call_gemini_text(content_text, user_prompt=""):
     return _parse_gemini_response(response.text)
 
 def call_gemini_image(image_bytes, mime_type, user_prompt=""):
-    model = genai.GenerativeModel('gemini-2.5-flash')
+    model = genai.GenerativeModel('gemini-.5-flash')
     prompt = SYSTEM_INSTRUCTIONS
     if user_prompt:
         prompt += f"\n\nAdditional instructions: {user_prompt}"
@@ -186,31 +183,29 @@ def convert():
 
         if has_file:
             ext = get_extension(uploaded_file.filename)
-            filename = secure_filename(uploaded_file.filename)
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            uploaded_file.save(filepath)
+            # Use a named temp file so it works on Render and any OS
+            suffix = f".{ext}"
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                uploaded_file.save(tmp.name)
+                tmp_path = tmp.name
 
             try:
                 if ext == 'pdf':
-                    # PDF: extract text then send as text
-                    pdf_text = extract_text_from_pdf(filepath)
+                    pdf_text = extract_text_from_pdf(tmp_path)
                     combined = pdf_text
                     if text_input:
                         combined += f"\n\n--- Additional Text ---\n\n{text_input}"
                     data = call_gemini_text(combined, user_prompt)
                 else:
-                    # Image: send bytes directly to Gemini vision
-                    with open(filepath, 'rb') as f:
+                    with open(tmp_path, 'rb') as f:
                         image_bytes = f.read()
                     mime_type = IMAGE_MIME_TYPES[ext]
-                    # If there's also pasted text, append it to the prompt
                     extra = f"\n\nAdditional text context:\n{text_input}" if text_input else ""
                     data = call_gemini_image(image_bytes, mime_type, user_prompt + extra)
             finally:
-                os.remove(filepath)
+                os.unlink(tmp_path)
 
         else:
-            # Text only
             data = call_gemini_text(text_input, user_prompt)
 
     except json.JSONDecodeError:
@@ -218,16 +213,17 @@ def convert():
     except Exception as e:
         return jsonify({'error': f'Processing error: {str(e)}'}), 500
 
-    output_filename = f"output_{os.getpid()}_{tempfile.gettempprefix()}.xlsx"
-    output_path = os.path.join(app.config['OUTPUT_FOLDER'], output_filename)
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_out:
+        out_path = tmp_out.name
 
     try:
-        build_excel(data, output_path)
+        build_excel(data, out_path)
     except Exception as e:
+        os.unlink(out_path)
         return jsonify({'error': f'Excel generation failed: {str(e)}'}), 500
 
     return send_file(
-        output_path,
+        out_path,
         as_attachment=True,
         download_name="extracted_data.xlsx",
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -235,6 +231,4 @@ def convert():
 
 
 if __name__ == '__main__':
-    os.makedirs('uploads', exist_ok=True)
-    os.makedirs('outputs', exist_ok=True)
     app.run(debug=True, port=5000)
