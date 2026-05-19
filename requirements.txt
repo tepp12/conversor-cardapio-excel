@@ -1,6 +1,6 @@
 flask
 google-generativeai
-pymupdf>
-openpyxl>
-werkzeug>
-gunicorn>
+pymupdf
+openpyxl
+werkzeug
+gunicorn
