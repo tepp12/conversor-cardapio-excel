@@ -27,14 +27,14 @@ IMAGE_MIME_TYPES = {
     'gif': 'image/gif',
 }
 
-SYSTEM_INSTRUCTIONS = """You are a data extraction expert. Your task is to analyze the provided content and extract all structured/tabular data from it.
+SYSTEM_INSTRUCTIONS = """You are a data extraction expert. Extract ALL data from the provided content without skipping any items.
 
 Return ONLY a valid JSON object with this exact structure:
 {
   "title": "descriptive title for the spreadsheet",
   "sheets": [
     {
-      "name": "Sheet name",
+      "name": "Data",
       "headers": ["Column1", "Column2", "Column3"],
       "rows": [
         ["value1", "value2", "value3"],
@@ -45,13 +45,15 @@ Return ONLY a valid JSON object with this exact structure:
 }
 
 Rules:
-- Extract ALL tables, lists, and structured data you find
-- Each distinct table/section should be its own sheet
-- Keep column headers concise and clear
-- Preserve numeric values as numbers (no quotes)
-- If there are multiple related tables, group them in the same sheet
-- Make sure every row has the same number of values as headers
-- Return ONLY the JSON, no markdown, no explanation
+- Extract EVERY SINGLE item — do not truncate, summarize, or stop early. If there are 100 items, return 100 rows.
+- If the document has categories or sections (e.g. "Beverages", "Food"), include the category as a column in every row it applies to — do NOT create separate sheets per category.
+- Keep product/item names exactly as written — do NOT split them into sub-columns. Example: "IMPERIO PURO MALTE 350ML" is ONE value in one column, not two columns.
+- Only create separate columns when the source document itself clearly separates values (e.g. a price column, a code column, a quantity column).
+- Preserve numeric values as numbers (no quotes).
+- Every row must have the same number of values as headers.
+- Always put ALL data into a SINGLE sheet. Never create multiple sheets.
+- Put all the headers in Brazilian Portuguese
+- Return ONLY the JSON, no markdown, no explanation.
 """
 
 def allowed_file(filename):
@@ -65,7 +67,7 @@ def pdf_to_images(filepath):
     doc = fitz.open(filepath)
     pages = []
     for page in doc:
-        mat = fitz.Matrix(2, 2)  # 2x zoom for better quality
+        mat = fitz.Matrix(3, 3)  # 3x zoom for high quality
         pix = page.get_pixmap(matrix=mat)
         pages.append((pix.tobytes("png"), "image/png"))
     doc.close()
