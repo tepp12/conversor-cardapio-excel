@@ -77,7 +77,7 @@ def _parse_gemini_response(raw):
     return json.loads(raw.strip())
 
 def call_gemini_text(content_text, user_prompt=""):
-    model = genai.GenerativeModel('gemini-.5-flash')
+    model = genai.GenerativeModel('gemini-2.5-flash')
     prompt = f"{SYSTEM_INSTRUCTIONS}\n\nContent to extract:\n{content_text}"
     if user_prompt:
         prompt += f"\n\nAdditional instructions: {user_prompt}"
@@ -85,7 +85,7 @@ def call_gemini_text(content_text, user_prompt=""):
     return _parse_gemini_response(response.text)
 
 def call_gemini_image(image_bytes, mime_type, user_prompt=""):
-    model = genai.GenerativeModel('gemini-.5-flash')
+    model = genai.GenerativeModel('gemini-2.5-flash')
     prompt = SYSTEM_INSTRUCTIONS
     if user_prompt:
         prompt += f"\n\nAdditional instructions: {user_prompt}"
