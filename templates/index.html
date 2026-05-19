@@ -383,23 +383,21 @@
 
   <div class="container">
     <header>
-      <div class="badge">POWERED BY GEMINI AI</div>
-      <h1>PDF → Excel<br/>Extractor</h1>
-      <p class="subtitle">Upload any PDF or paste text and let AI intelligently structure your data into a clean Excel spreadsheet.</p>
+      <h1>PDF → Excel<br/></h1>
     </header>
 
     <form id="convertForm">
 
       <!-- Input -->
       <div class="card">
-        <div class="card-title">Input Source</div>
+        <div class="card-title">Entrada</div>
 
         <!-- PDF Upload -->
         <div class="drop-zone" id="dropZone">
           <input type="file" id="pdfFile" name="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif" />
           <span class="drop-icon">📄</span>
-          <p><strong>Click or drag & drop</strong> a PDF or image here</p>
-          <p style="font-size:0.78rem; margin-top:4px;">Supports PDF, PNG, JPG, WEBP, GIF — up to 32MB</p>
+          <p><strong>Clique ou arraste</strong> um pdf ou imagem aqui</p>
+          <p style="font-size:0.78rem; margin-top:4px;">PDF, PNG, JPG, WEBP, GIF — até 32MB</p>
         </div>
         <div class="file-selected" id="fileSelected" style="display:none;">
           <span>✅</span>
@@ -410,30 +408,30 @@
 
         <!-- Text Input -->
         <div class="input-group">
-          <label>PASTE TEXT / TABLE DATA</label>
+          <label>COLE TEXTO / DADOS DE TABELA</label>
           <textarea id="textInput" name="text_input" placeholder="Paste any text, CSV data, or table here...&#10;&#10;Example:&#10;Product | Category | Price&#10;Coca-Cola | Beverages | 5.00&#10;Fanta | Beverages | 5.00"></textarea>
         </div>
 
         <!-- Optional prompt -->
         <div class="input-group" style="margin-top:16px;">
-          <label>EXTRACTION INSTRUCTIONS (OPTIONAL)</label>
+          <label>INSTRUÇÕES DE EXTRAÇÃO (OPCIONAL)</label>
           <input type="text" id="userPrompt" name="prompt" placeholder="e.g. Focus on price data only, group by category..." />
         </div>
       </div>
 
       <!-- Submit -->
       <button type="submit" class="btn-convert" id="submitBtn">
-        ⚡ Extract to Excel
+        Extrair para Excek
       </button>
 
       <div class="status loading" id="statusLoading" style="display:none;">
         <div class="spinner"></div>
-        <span id="loadingText">Sending to Gemini AI...</span>
+        <span id="loadingText">Enviando para o Gemini...</span>
       </div>
 
       <div class="status success" id="statusSuccess" style="display:none;">
         <span>✅</span>
-        <span>Excel file downloaded! Check your downloads folder.</span>
+        <span>Excel file baixado.</span>
       </div>
 
       <div class="status error" id="statusError" style="display:none;">
