@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDF → Excel Extractor</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0b0e1a;
+      --surface: #111527;
+      --surface2: #181c30;
+      --border: #252a42;
+      --accent: #4361ee;
+      --accent2: #7b2fff;
+      --success: #06d6a0;
+      --danger: #ef476f;
+      --text: #e8eaf6;
+      --muted: #7b82a8;
+      --font-display: 'Syne', sans-serif;
+      --font-mono: 'DM Mono', monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-display);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Background grid */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(67,97,238,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(67,97,238,0.04) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .glow-blob {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.12;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .glow-blob.a { width: 600px; height: 600px; background: var(--accent); top: -200px; left: -200px; }
+    .glow-blob.b { width: 500px; height: 500px; background: var(--accent2); bottom: -150px; right: -150px; }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 48px 24px 80px;
+    }
+
+    /* Header */
+    header {
+      text-align: center;
+      margin-bottom: 56px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(67,97,238,0.15);
+      border: 1px solid rgba(67,97,238,0.35);
+      border-radius: 100px;
+      padding: 6px 14px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      letter-spacing: 0.08em;
+      color: #a5b4fc;
+      margin-bottom: 20px;
+    }
+
+    .badge::before {
+      content: '';
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    h1 {
+      font-size: clamp(2.2rem, 5vw, 3.4rem);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+      margin-bottom: 14px;
+      background: linear-gradient(135deg, #e8eaf6 30%, #a5b4fc 70%, #7b2fff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 1rem;
+      font-weight: 400;
+      max-width: 480px;
+      margin: 0 auto;
+      line-height: 1.6;
+    }
+
+    /* Card */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 36px;
+      margin-bottom: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(67,97,238,0.5), transparent);
+    }
+
+    .card-title {
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* API Key input */
+    .input-group {
+      position: relative;
+    }
+
+    .input-group label {
+      display: block;
+      font-size: 0.8rem;
+      font-family: var(--font-mono);
+      color: var(--muted);
+      margin-bottom: 8px;
+      letter-spacing: 0.05em;
+    }
+
+    input[type="text"], input[type="password"], textarea {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    input[type="text"]:focus, input[type="password"]:focus, textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(67,97,238,0.15);
+    }
+
+    textarea {
+      min-height: 160px;
+      resize: vertical;
+      line-height: 1.6;
+      font-family: var(--font-mono);
+    }
+
+    /* File drop zone */
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: 14px;
+      padding: 40px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.25s;
+      background: var(--surface2);
+      position: relative;
+    }
+
+    .drop-zone:hover, .drop-zone.dragging {
+      border-color: var(--accent);
+      background: rgba(67,97,238,0.06);
+    }
+
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .drop-icon {
+      font-size: 2.5rem;
+      margin-bottom: 12px;
+      display: block;
+      filter: grayscale(0.3);
+    }
+
+    .drop-zone p {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .drop-zone p strong {
+      color: #a5b4fc;
+    }
+
+    .file-selected {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(6,214,160,0.1);
+      border: 1px solid rgba(6,214,160,0.3);
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-top: 12px;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      color: var(--success);
+    }
+
+    /* Divider */
+    .or-divider {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-family: var(--font-mono);
+      letter-spacing: 0.1em;
+      margin: 24px 0;
+    }
+
+    .or-divider::before, .or-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* Submit button */
+    .btn-convert {
+      width: 100%;
+      padding: 16px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border: none;
+      border-radius: 12px;
+      color: white;
+      font-family: var(--font-display);
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+      overflow: hidden;
+      margin-top: 24px;
+    }
+
+    .btn-convert::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent);
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .btn-convert:hover::before { opacity: 1; }
+    .btn-convert:hover { transform: translateY(-1px); box-shadow: 0 8px 30px rgba(67,97,238,0.35); }
+    .btn-convert:active { transform: translateY(0); }
+    .btn-convert:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+    /* Status messages */
+    .status {
+      display: none;
+      border-radius: 12px;
+      padding: 16px 20px;
+      font-size: 0.9rem;
+      margin-top: 16px;
+      font-family: var(--font-mono);
+      line-height: 1.5;
+    }
+
+    .status.loading {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(67,97,238,0.1);
+      border: 1px solid rgba(67,97,238,0.3);
+      color: #a5b4fc;
+    }
+
+    .status.success {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(6,214,160,0.1);
+      border: 1px solid rgba(6,214,160,0.3);
+      color: var(--success);
+    }
+
+    .status.error {
+      display: block;
+      background: rgba(239,71,111,0.1);
+      border: 1px solid rgba(239,71,111,0.3);
+      color: #fca5a5;
+    }
+
+    /* Spinner */
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid rgba(165,180,252,0.2);
+      border-top-color: #a5b4fc;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Tips */
+    .tips {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .tip {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+    }
+
+    .tip-icon { font-size: 1.4rem; margin-bottom: 8px; }
+    .tip h4 { font-size: 0.82rem; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .tip p { font-size: 0.75rem; color: var(--muted); line-height: 1.5; }
+
+    @media (max-width: 600px) {
+      .tips { grid-template-columns: 1fr; }
+      .card { padding: 24px 18px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="glow-blob a"></div>
+  <div class="glow-blob b"></div>
+
+  <div class="container">
+    <header>
+      <div class="badge">POWERED BY GEMINI AI</div>
+      <h1>PDF → Excel<br/>Extractor</h1>
+      <p class="subtitle">Upload any PDF or paste text and let AI intelligently structure your data into a clean Excel spreadsheet.</p>
+    </header>
+
+    <form id="convertForm">
+
+      <!-- Input -->
+      <div class="card">
+        <div class="card-title">Input Source</div>
+
+        <!-- PDF Upload -->
+        <div class="drop-zone" id="dropZone">
+          <input type="file" id="pdfFile" name="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif" />
+          <span class="drop-icon">📄</span>
+          <p><strong>Click or drag & drop</strong> a PDF or image here</p>
+          <p style="font-size:0.78rem; margin-top:4px;">Supports PDF, PNG, JPG, WEBP, GIF — up to 32MB</p>
+        </div>
+        <div class="file-selected" id="fileSelected" style="display:none;">
+          <span>✅</span>
+          <span id="fileName"></span>
+        </div>
+
+        <div class="or-divider">OR</div>
+
+        <!-- Text Input -->
+        <div class="input-group">
+          <label>PASTE TEXT / TABLE DATA</label>
+          <textarea id="textInput" name="text_input" placeholder="Paste any text, CSV data, or table here...&#10;&#10;Example:&#10;Product | Category | Price&#10;Coca-Cola | Beverages | 5.00&#10;Fanta | Beverages | 5.00"></textarea>
+        </div>
+
+        <!-- Optional prompt -->
+        <div class="input-group" style="margin-top:16px;">
+          <label>EXTRACTION INSTRUCTIONS (OPTIONAL)</label>
+          <input type="text" id="userPrompt" name="prompt" placeholder="e.g. Focus on price data only, group by category..." />
+        </div>
+      </div>
+
+      <!-- Submit -->
+      <button type="submit" class="btn-convert" id="submitBtn">
+        ⚡ Extract to Excel
+      </button>
+
+      <div class="status loading" id="statusLoading" style="display:none;">
+        <div class="spinner"></div>
+        <span id="loadingText">Sending to Gemini AI...</span>
+      </div>
+
+      <div class="status success" id="statusSuccess" style="display:none;">
+        <span>✅</span>
+        <span>Excel file downloaded! Check your downloads folder.</span>
+      </div>
+
+      <div class="status error" id="statusError" style="display:none;">
+        <span id="errorText"></span>
+      </div>
+
+    </form>
+
+  <script>
+    const form = document.getElementById('convertForm');
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('pdfFile');
+    const fileSelected = document.getElementById('fileSelected');
+    const fileName = document.getElementById('fileName');
+    const submitBtn = document.getElementById('submitBtn');
+    const statusLoading = document.getElementById('statusLoading');
+    const statusSuccess = document.getElementById('statusSuccess');
+    const statusError = document.getElementById('statusError');
+    const loadingText = document.getElementById('loadingText');
+    const errorText = document.getElementById('errorText');
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files[0]) {
+        const f = fileInput.files[0];
+        fileName.textContent = f.name;
+        fileSelected.style.display = 'flex';
+        const isImage = f.type.startsWith('image/');
+        dropZone.querySelector('.drop-icon').textContent = isImage ? '🖼️' : '📄';
+      }
+    });
+
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragging'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragging'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('dragging');
+      const file = e.dataTransfer.files[0];
+      const validExts = ['pdf','png','jpg','jpeg','webp','gif'];
+      const ext = file?.name.split('.').pop().toLowerCase();
+      if (file && validExts.includes(ext)) {
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        fileInput.files = dt.files;
+        fileName.textContent = file.name;
+        fileSelected.style.display = 'flex';
+      }
+    });
+
+    function resetStatus() {
+      statusLoading.style.display = 'none';
+      statusSuccess.style.display = 'none';
+      statusError.style.display = 'none';
+    }
+
+    const steps = [
+      "Sending to Gemini AI...",
+      "Reading your content...",
+      "Extracting structured data...",
+      "Building Excel spreadsheet...",
+    ];
+    let stepIndex = 0;
+    let stepInterval;
+
+    function startLoadingSteps() {
+      stepIndex = 0;
+      loadingText.textContent = steps[0];
+      stepInterval = setInterval(() => {
+        stepIndex = (stepIndex + 1) % steps.length;
+        loadingText.textContent = steps[stepIndex];
+      }, 2500);
+    }
+
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      resetStatus();
+
+      const hasPdf = fileInput.files[0];
+      const hasText = document.getElementById('textInput').value.trim();
+      if (!hasPdf && !hasText) {
+        statusError.style.display = 'block';
+        errorText.textContent = '⚠️ Please upload a PDF or paste some text.';
+        return;
+      }
+
+      submitBtn.disabled = true;
+      statusLoading.style.display = 'flex';
+      startLoadingSteps();
+
+      const formData = new FormData(form);
+
+      try {
+        const response = await fetch('/api/convert', {
+          method: 'POST',
+          body: formData,
+        });
+
+        clearInterval(stepInterval);
+
+        if (response.ok) {
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'extracted_data.xlsx';
+          a.click();
+          URL.revokeObjectURL(url);
+          statusLoading.style.display = 'none';
+          statusSuccess.style.display = 'flex';
+        } else {
+          const data = await response.json();
+          statusLoading.style.display = 'none';
+          statusError.style.display = 'block';
+          errorText.textContent = '❌ ' + (data.error || 'An unexpected error occurred.');
+        }
+      } catch (err) {
+        clearInterval(stepInterval);
+        statusLoading.style.display = 'none';
+        statusError.style.display = 'block';
+        errorText.textContent = '❌ Network error: ' + err.message;
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
